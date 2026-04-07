@@ -1,0 +1,138 @@
+{
+  "DB_CONNECTION_ERROR": {
+    "error_type": "Database Connection Failure",
+    "fix_type": "restart_service",
+    "parameters": {
+      "service": "database",
+      "timeout": 30,
+      "retry_count": 3
+    },
+    "steps": [
+      "Verify database service status",
+      "Check connection string and credentials",
+      "Restart database service",
+      "Verify connectivity"
+    ],
+    "severity": "HIGH",
+    "resolution_time_minutes": 5
+  },
+  "MEMORY_LEAK": {
+    "error_type": "Memory Usage Exceeds Threshold",
+    "fix_type": "restart_process",
+    "parameters": {
+      "service": "application",
+      "graceful_shutdown": true,
+      "restart_strategy": "blue_green"
+    },
+    "steps": [
+      "Identify process with memory leak",
+      "Initiate graceful shutdown",
+      "Start new instance (blue-green deployment)",
+      "Monitor memory usage"
+    ],
+    "severity": "HIGH",
+    "resolution_time_minutes": 3
+  },
+  "API_TIMEOUT": {
+    "error_type": "Request Timeout",
+    "fix_type": "scale_resources",
+    "parameters": {
+      "target": "compute_instance",
+      "scale_factor": 1.5,
+      "load_balancer_update": true
+    },
+    "steps": [
+      "Check API response times",
+      "Review current resource allocation",
+      "Scale up compute resources",
+      "Load balance traffic to new instances"
+    ],
+    "severity": "MEDIUM",
+    "resolution_time_minutes": 10
+  },
+  "AUTHENTICATION_FAILURE": {
+    "error_type": "Auth Token Invalid or Expired",
+    "fix_type": "refresh_credentials",
+    "parameters": {
+      "credential_type": "service_account",
+      "refresh_cache": true
+    },
+    "steps": [
+      "Verify service account credentials",
+      "Check token expiration",
+      "Refresh service account key",
+      "Clear credential cache",
+      "Retry failed requests"
+    ],
+    "severity": "CRITICAL",
+    "resolution_time_minutes": 2
+  },
+  "DISK_SPACE_FULL": {
+    "error_type": "Disk Storage at Capacity",
+    "fix_type": "cleanup_storage",
+    "parameters": {
+      "target_path": "/var/app",
+      "delete_temp_files": true,
+      "archive_logs": true
+    },
+    "steps": [
+      "Identify disk usage by directory",
+      "Archive old logs to cloud storage",
+      "Delete temporary files",
+      "Clear cache directories"
+    ],
+    "severity": "CRITICAL",
+    "resolution_time_minutes": 5
+  },
+  "CPU_HIGH": {
+    "error_type": "CPU Usage Exceeds 85%",
+    "fix_type": "optimize_queries",
+    "parameters": {
+      "service": "backend",
+      "enable_query_cache": true,
+      "scale_instances": true
+    },
+    "steps": [
+      "Identify high-CPU processes",
+      "Analyze slow queries",
+      "Enable query optimization cache",
+      "Scale to additional compute instances"
+    ],
+    "severity": "HIGH",
+    "resolution_time_minutes": 8
+  },
+  "NETWORK_LATENCY": {
+    "error_type": "High Network Latency Detected",
+    "fix_type": "optimize_network",
+    "parameters": {
+      "enable_cdn": true,
+      "enable_compression": true,
+      "review_routing": true
+    },
+    "steps": [
+      "Check network latency metrics",
+      "Enable CDN for static assets",
+      "Enable gzip compression",
+      "Review routing configuration",
+      "Check for packet loss"
+    ],
+    "severity": "MEDIUM",
+    "resolution_time_minutes": 15
+  },
+  "PERMISSION_DENIED": {
+    "error_type": "Access Control List Violation",
+    "fix_type": "update_iam",
+    "parameters": {
+      "resource_type": "cloud_resource",
+      "permission_type": "read_write"
+    },
+    "steps": [
+      "Verify service account permissions",
+      "Check IAM role assignments",
+      "Update IAM bindings if needed",
+      "Verify resource access policies"
+    ],
+    "severity": "HIGH",
+    "resolution_time_minutes": 5
+  }
+}

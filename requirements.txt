@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+google-cloud-firestore
+google-cloud-pubsub
+google-cloud-aiplatform
+requests
+pydantic
+vertexai
+faiss-cpu
+numpy
+python-dotenv
+PyGithub>=1.58
+schedule>=1.1.9
