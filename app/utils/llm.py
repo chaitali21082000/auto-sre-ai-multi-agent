@@ -2,10 +2,12 @@ from vertexai.generative_models import GenerativeModel, Tool
 import vertexai
 import json
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
-vertexai.init(project="auto-sre-ai-multi-agent", location="us-central1")
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent-492710")
+vertexai.init(project=project_id, location="us-central1")
 
 model = GenerativeModel("gemini-2.5-flash")
 

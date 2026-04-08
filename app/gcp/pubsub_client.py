@@ -2,7 +2,9 @@ from google.cloud import pubsub_v1
 import json
 
 publisher = pubsub_v1.PublisherClient()
-topic_path = "projects/auto-sre-ai-multi-agent/topics/alerts"
+import os
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent-492710")
+topic_path = f"projects/{project_id}/topics/alerts"
 
 def publish_alert(parsed, decision):
 

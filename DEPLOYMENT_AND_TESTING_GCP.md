@@ -501,18 +501,44 @@ echo "Function URL: $CF_URL"
 ### **Step 3.4: Configure GitHub Webhook**
 
 ```bash
+# IMPORTANT: Make sure CLOUD_RUN_URL is set from Step 3.2
+# Verify it's set correctly:
+echo "Cloud Run URL: ${CLOUD_RUN_URL}"
+# Should output something like: https://autosre-ai-abc123.a.run.app
+
+# If CLOUD_RUN_URL is empty, get it from Cloud Run:
+if [ -z "$CLOUD_RUN_URL" ]; then
+  export CLOUD_RUN_URL=$(gcloud run services describe autosre-ai \
+    --platform managed \
+    --region ${REGION} \
+    --format 'value(status.url)')
+  echo "✅ Set CLOUD_RUN_URL: ${CLOUD_RUN_URL}"
+fi
+
 # For each service repository, add webhook:
 
-# Example for one repo:
-export ORG="your-org"
-export REPO="your-service-repo"
+# Example for PERSONAL/PRIVATE repo:
+# Use your GitHub USERNAME instead of organization
+export ORG="chaitali21082000"
+export REPO="auto-sre-ai-multi-agent"
 
 # Get webhook secret
 WEBHOOK_SECRET=$(gcloud secrets versions access latest --secret=github-webhook-secret)
 
+# Get your GitHub token (already stored in Secret Manager)
+GITHUB_TOKEN=$(gcloud secrets versions access latest --secret=github-token)
+
+# Verify all variables are set before creating webhook
+echo "Verifying webhook configuration:"
+echo "  ORG: ${ORG}"
+echo "  REPO: ${REPO}"
+echo "  CLOUD_RUN_URL: ${CLOUD_RUN_URL}"
+echo "  WEBHOOK_SECRET: ${WEBHOOK_SECRET:0:10}..." # Show first 10 chars
+echo "  GITHUB_TOKEN: ${GITHUB_TOKEN:0:10}..." # Show first 10 chars
+
 # Create webhook via GitHub API
 curl -X POST \
-  -H "Authorization: token $(gcloud secrets versions access latest --secret=github-token)" \
+  -H "Authorization: token ${GITHUB_TOKEN}" \
   -H "Accept: application/vnd.github.v3+json" \
   https://api.github.com/repos/${ORG}/${REPO}/hooks \
   -d "{
@@ -527,8 +553,26 @@ curl -X POST \
     }
   }"
 
+echo ""
 echo "✅ GitHub webhook configured"
+echo "Webhook URL: ${CLOUD_RUN_URL}/api/webhooks/github"
+echo "Webhook Details:"
+echo "  Repository: https://github.com/${ORG}/${REPO}"
+echo "  Settings: https://github.com/${ORG}/${REPO}/settings/hooks"
 ```
+
+**Troubleshooting webhook creation errors:**
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `url is missing a scheme` | CLOUD_RUN_URL is empty or missing `https://` | Run Step 3.2 first, verify with `echo ${CLOUD_RUN_URL}` |
+| `Validation Failed` | Token or repository doesn't exist | Check GitHub token has `repo:admin:repo_hook` scope |
+| `Not Found` | ORG or REPO name is wrong | Verify with `https://github.com/${ORG}/${REPO}` |
+
+**Finding your ORG value:**
+- **Organization repo**: Use your organization name (e.g., `my-company`)
+- **Personal/Private repo**: Use your GitHub username (e.g., `chaitali21082000`)
+- **Verify**: Open `https://github.com/YOUR_USERNAME_OR_ORG` in browser
 
 ---
 
