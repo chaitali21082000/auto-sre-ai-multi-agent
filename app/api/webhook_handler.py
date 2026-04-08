@@ -13,7 +13,12 @@ import os
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from typing import Dict, Optional
-from google.cloud import secretmanager
+
+try:
+    from google.cloud import secretmanager
+    HAS_SECRET_MANAGER = True
+except ImportError:
+    HAS_SECRET_MANAGER = False
 
 from app.rag.knowledge_manager import KnowledgeManager, rebuild_faiss_index
 
@@ -21,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 def get_secret_from_manager(secret_id: str) -> Optional[str]:
     """Get secret from Secret Manager"""
+    if not HAS_SECRET_MANAGER:
+        logger.debug("Secret Manager not available")
+        return None
+    
     try:
         client = secretmanager.SecretManagerServiceClient()
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent")

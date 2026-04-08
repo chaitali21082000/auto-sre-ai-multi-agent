@@ -4,12 +4,28 @@ import json
 import os
 import logging
 from app.config.services import get_service_repo
-from google.cloud import secretmanager
+
+try:
+    from google.cloud import secretmanager
+    HAS_SECRET_MANAGER = True
+except ImportError:
+    HAS_SECRET_MANAGER = False
+    logger = logging.getLogger(__name__)
+    logger.warning("Secret Manager not available - will use environment variables only")
 
 logger = logging.getLogger(__name__)
 
 def get_secret(secret_id: str) -> str:
     """Get secret from Secret Manager with fallback to env var"""
+    if not HAS_SECRET_MANAGER:
+        env_var = secret_id.upper().replace("-", "_")
+        fallback = os.getenv(env_var)
+        if fallback:
+            logger.info(f"Using environment variable {env_var}")
+            return fallback
+        logger.error(f"Secret {secret_id} not found in environment")
+        return None
+    
     try:
         client = secretmanager.SecretManagerServiceClient()
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent")

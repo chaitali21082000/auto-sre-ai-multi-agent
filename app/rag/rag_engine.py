@@ -5,9 +5,16 @@ import numpy as np
 from app.utils.embeddings import get_embeddings, embed_text, cosine_similarity
 import os
 import logging
-from google.cloud import storage
+
+try:
+    from google.cloud import storage
+    HAS_GCS = True
+except ImportError:
+    HAS_GCS = False
 
 logger = logging.getLogger(__name__)
+if not HAS_GCS:
+    logger.warning("Google Cloud Storage not available - will use local storage only")
 
 KNOWLEDGE_BASE_FILE = "app/rag/knowledge_base.json"
 FAISS_INDEX_FILE = "app/rag/faiss_index.bin"
@@ -30,7 +37,7 @@ class RAGEngine:
     
     def _initialize_index(self):
         """Initialize FAISS index from GCS or local files or create new one"""
-        if self._gcs_index_exists():
+        if HAS_GCS and self._gcs_index_exists():
             self._load_index_from_gcs()
         elif os.path.exists(FAISS_INDEX_FILE) and os.path.exists(KB_EMBEDDINGS_FILE):
             # Load from local files
@@ -112,19 +119,32 @@ class RAGEngine:
         # Rebuild index
         self._rebuild_index()
     
+    def rebuild_index(self):
+        """Public method to rebuild FAISS index (called by external systems)"""
+        logger.info("Rebuilding FAISS index...")
+        self._rebuild_index()
+        logger.info("FAISS index rebuilt successfully")
+    
     def _gcs_index_exists(self) -> bool:
         """Check if FAISS index exists in GCS"""
+        if not HAS_GCS:
+            return False
+        
         try:
             storage_client = storage.Client()
             bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
             bucket = storage_client.bucket(bucket_name)
             return bucket.blob("faiss_index.bin").exists()
         except Exception as e:
-            logger.warning(f"Error checking GCS index: {e}")
+            logger.debug(f"Error checking GCS index: {e}")
             return False
     
     def _load_index_from_gcs(self):
         """Load FAISS index and embeddings from GCS"""
+        if not HAS_GCS:
+            logger.debug("GCS not available, skipping")
+            return
+        
         try:
             storage_client = storage.Client()
             bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
@@ -141,11 +161,15 @@ class RAGEngine:
             
             logger.info("FAISS index loaded from GCS")
         except Exception as e:
-            logger.error(f"Could not load FAISS from GCS: {e}")
+            logger.debug(f"Could not load FAISS from GCS: {e}")
             self._rebuild_index()
     
     def _save_index_to_gcs(self):
         """Save FAISS index and embeddings to GCS"""
+        if not HAS_GCS:
+            logger.debug("GCS not available, skipping persisting to GCS")
+            return
+        
         try:
             storage_client = storage.Client()
             bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
@@ -163,7 +187,7 @@ class RAGEngine:
             
             logger.info("FAISS index saved to GCS")
         except Exception as e:
-            logger.error(f"Error saving FAISS to GCS: {e}")
+            logger.debug(f"Error saving FAISS to GCS: {e}")
 
 # Singleton instance
 _rag_engine = None

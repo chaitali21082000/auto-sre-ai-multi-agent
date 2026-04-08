@@ -10,10 +10,24 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from google.cloud import storage
-from google.cloud import firestore
+
+try:
+    from google.cloud import storage
+    HAS_GCS = True
+except ImportError:
+    HAS_GCS = False
+
+try:
+    from google.cloud import firestore
+    HAS_FIRESTORE = True
+except ImportError:
+    HAS_FIRESTORE = False
 
 logger = logging.getLogger(__name__)
+if not HAS_GCS:
+    logger.warning("Google Cloud Storage not available - will use local storage only")
+if not HAS_FIRESTORE:
+    logger.warning("Firestore not available")
 
 
 class KnowledgeManager:
@@ -24,48 +38,54 @@ class KnowledgeManager:
     @staticmethod
     def load_kb() -> dict:
         """Load KB from Cloud Storage with fallback to local file"""
-        try:
-            storage_client = storage.Client()
-            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
-            bucket = storage_client.bucket(bucket_name)
-            blob = bucket.blob("knowledge_base.json")
-            
-            if blob.exists():
-                content = blob.download_as_string()
-                logger.info("Loaded KB from Cloud Storage")
-                return json.loads(content)
-            logger.warning("KB blob not found in Cloud Storage")
-            return {"scenarios": []}
-        except Exception as e:
-            logger.warning(f"Could not load KB from GCS: {e}")
-            # Fallback to local file if available
+        # Try GCS first if available
+        if HAS_GCS:
             try:
-                if os.path.exists(KnowledgeManager.KB_PATH):
-                    with open(KnowledgeManager.KB_PATH) as f:
-                        logger.info("Loaded KB from local file")
-                        return json.load(f)
-            except Exception as local_err:
-                logger.warning(f"Could not load KB from local file: {local_err}")
-            return {"scenarios": []}
+                storage_client = storage.Client()
+                bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob("knowledge_base.json")
+                
+                if blob.exists():
+                    content = blob.download_as_string()
+                    logger.info("Loaded KB from Cloud Storage")
+                    return json.loads(content)
+                logger.debug("KB blob not found in Cloud Storage")
+            except Exception as e:
+                logger.debug(f"Could not load KB from GCS: {e}")
+        
+        # Fallback to local file
+        try:
+            if os.path.exists(KnowledgeManager.KB_PATH):
+                with open(KnowledgeManager.KB_PATH) as f:
+                    logger.info("Loaded KB from local file")
+                    return json.load(f)
+        except Exception as local_err:
+            logger.warning(f"Could not load KB from local file: {local_err}")
+        
+        return {"scenarios": []}
     
     @staticmethod
     def save_kb(kb: dict) -> bool:
         """Save KB to Cloud Storage with fallback to local file"""
         saved_to_gcs = False
-        try:
-            storage_client = storage.Client()
-            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
-            bucket = storage_client.bucket(bucket_name)
-            blob = bucket.blob("knowledge_base.json")
-            
-            blob.upload_from_string(
-                json.dumps(kb, indent=2),
-                content_type="application/json"
-            )
-            logger.info("KB saved to Cloud Storage")
-            saved_to_gcs = True
-        except Exception as e:
-            logger.error(f"Error saving KB to GCS: {e}")
+        
+        # Try GCS first if available
+        if HAS_GCS:
+            try:
+                storage_client = storage.Client()
+                bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+                bucket = storage_client.bucket(bucket_name)
+                blob = bucket.blob("knowledge_base.json")
+                
+                blob.upload_from_string(
+                    json.dumps(kb, indent=2),
+                    content_type="application/json"
+                )
+                logger.info("KB saved to Cloud Storage")
+                saved_to_gcs = True
+            except Exception as e:
+                logger.debug(f"Error saving KB to GCS: {e}")
         
         # Always try local backup
         try:
@@ -383,11 +403,11 @@ def rebuild_faiss_index():
     This ensures new solutions are searchable immediately
     """
     try:
-        from app.rag.rag_engine import RAGEngine
+        from app.rag.rag_engine import get_rag_engine
         
         logger.info("🔄 Rebuilding FAISS index...")
-        engine = RAGEngine()
-        engine.build_index()
+        engine = get_rag_engine()
+        engine.rebuild_index()
         logger.info("✅ FAISS index rebuilt successfully")
         return True
     except Exception as e:
