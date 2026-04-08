@@ -278,9 +278,11 @@ def github_webhook():
         logger.info(f"Received GitHub webhook: {event_type}")
         
         if event_type == 'pull_request':
-            return handle_pr_event(payload)
+            result, status = handle_pr_event(payload)
+            return jsonify(result), status
         elif event_type == 'issues':
-            return handle_issue_event(payload)
+            result, status = handle_issue_event(payload)
+            return jsonify(result), status
         else:
             logger.info(f"Ignoring event type: {event_type}")
             return jsonify({'status': 'ignored'}), 200
@@ -301,14 +303,14 @@ def handle_pr_event(payload: dict) -> tuple:
     # Only process merged PRs
     if action != 'closed' or not pr.get('merged'):
         logger.info(f"PR #{pr_number}: Ignoring (not merged)")
-        return jsonify({'status': 'not-merged'}), 200
+        return {'status': 'not-merged'}, 200
     
     # Check for auto-detected-fix label
     labels = [label['name'] for label in pr.get('labels', [])]
     
     if 'auto-detected-fix' not in labels:
         logger.info(f"PR #{pr_number}: Missing 'auto-detected-fix' label")
-        return jsonify({'status': 'not-autofix'}), 200
+        return {'status': 'not-autofix'}, 200
     
     logger.info(f"PR #{pr_number}: Processing auto-detected-fix")
     
@@ -317,13 +319,13 @@ def handle_pr_event(payload: dict) -> tuple:
     
     if not solution:
         logger.error(f"PR #{pr_number}: Failed to parse solution")
-        return jsonify({'status': 'parse-failed', 'message': 'Could not extract solution'}), 400
+        return {'status': 'parse-failed', 'message': 'Could not extract solution'}, 400
     
     # Validate solution quality
     valid, issues = KnowledgeManager.validate_solution_quality(solution)
     if not valid:
         logger.warning(f"PR #{pr_number}: Solution validation failed: {issues}")
-        return jsonify({'status': 'validation-failed', 'issues': issues}), 400
+        return {'status': 'validation-failed', 'issues': issues}, 400
     
     # Add to knowledge base
     success = KnowledgeManager.add_solution(solution)
@@ -334,15 +336,15 @@ def handle_pr_event(payload: dict) -> tuple:
         
         logger.info(f"✅ PR #{pr_number}: Learned solution for {solution['error_type']}")
         
-        return jsonify({
+        return {
             'status': 'learned',
             'error_type': solution['error_type'],
             'confidence': solution.get('confidence', 0.80),
             'pr_number': pr_number
-        }), 200
+        }, 200
     else:
         logger.error(f"PR #{pr_number}: Failed to add solution to KB")
-        return jsonify({'status': 'failed', 'message': 'Failed to add to KB'}), 500
+        return {'status': 'failed', 'message': 'Failed to add to KB'}, 500
 
 
 def handle_issue_event(payload: dict) -> tuple:
@@ -355,16 +357,16 @@ def handle_issue_event(payload: dict) -> tuple:
     # Only process closed issues
     if action != 'closed':
         logger.info(f"Issue #{issue_number}: Ignoring (not closed)")
-        return jsonify({'status': 'not-closed'}), 200
+        return {'status': 'not-closed'}, 200
     
     # Check for error-fixed label
     labels = [label['name'] for label in issue.get('labels', [])]
     
     if 'error-fixed' not in labels:
         logger.info(f"Issue #{issue_number}: Missing 'error-fixed' label")
-        return jsonify({'status': 'not-error-fixed'}), 200
+        return {'status': 'not-error-fixed'}, 200
     
     logger.info(f"Issue #{issue_number}: Error marked as fixed (currently not processing)")
     
     # Future: Could extract solution from closed issue if needed
-    return jsonify({'status': 'issue-closed'}), 200
+    return {'status': 'issue-closed'}, 200
