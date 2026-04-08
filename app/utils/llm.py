@@ -1,4 +1,4 @@
-from vertexai.generative_models import GenerativeModel, Tool, FunctionDefinition
+from vertexai.generative_models import GenerativeModel, Tool
 import vertexai
 import json
 import logging
@@ -98,6 +98,7 @@ IMPORTANT: Return ONLY valid JSON, no other text."""
 def call_llm_with_functions(prompt, tools, system_instruction=None):
     """
     Call LLM with function/tool definitions for function calling.
+    Falls back to text-based approach if function calling not available.
     
     Args:
         prompt: The user prompt/query
@@ -108,57 +109,134 @@ def call_llm_with_functions(prompt, tools, system_instruction=None):
         Dict with tool_calls if tools were invoked, or response text
     """
     try:
-        # Convert MCP tool format to Vertex AI function definitions
-        function_definitions = []
+        logger.info("Attempting function calling with Vertex AI tools")
+        
+        # Build tool definitions
+        tool_definitions = []
         for tool in tools:
-            func_def = FunctionDefinition(
-                name=tool.get("name"),
-                description=tool.get("description"),
-                parameters={
+            tool_def = {
+                "name": tool.get("name"),
+                "description": tool.get("description"),
+                "parameters": {
                     "type": "object",
                     "properties": tool.get("input_schema", {}).get("properties", {}),
                     "required": tool.get("input_schema", {}).get("required", [])
                 }
-            )
-            function_definitions.append(func_def)
+            }
+            tool_definitions.append(tool_def)
         
-        # Create Tool with function definitions
-        vertex_tool = Tool(function_declarations=function_definitions)
-        
-        # Build full prompt
-        if system_instruction:
-            full_prompt = f"""{system_instruction}
+        # Try to use Vertex AI tool calling if available
+        try:
+            from google.ai.generativelanguage import FunctionDeclaration
+            
+            function_declarations = []
+            for tool_def in tool_definitions:
+                func_decl = FunctionDeclaration(
+                    name=tool_def["name"],
+                    description=tool_def["description"],
+                    parameters={
+                        "type_": "OBJECT",
+                        "properties": tool_def["parameters"]["properties"],
+                        "required": tool_def["parameters"]["required"]
+                    }
+                )
+                function_declarations.append(func_decl)
+            
+            vertex_tool = Tool(function_declarations=function_declarations)
+            
+            # Build full prompt
+            if system_instruction:
+                full_prompt = f"""{system_instruction}
 
 {prompt}"""
-        else:
-            full_prompt = prompt
-        
-        # Call model with tools
-        response = model.generate_content(
-            full_prompt,
-            tools=[vertex_tool],
-            tool_config={"function_calling_config": {"mode": "ANY"}}
-        )
-        
-        # Check if tool was called
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.function_call:
-                    logger.info(f"Tool called: {part.function_call.name}")
-                    return {
-                        "tool_calls": [{
-                            "name": part.function_call.name,
-                            "arguments": dict(part.function_call.args)
-                        }],
-                        "raw_response": response.text
-                    }
-        
-        # No tool was called, return text response
-        return {
-            "tool_calls": [],
-            "response": response.text
-        }
+            else:
+                full_prompt = prompt
+            
+            # Call model with tools
+            response = model.generate_content(full_prompt, tools=[vertex_tool])
+            
+            # Check if tool was called
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        logger.info(f"Tool called: {part.function_call.name}")
+                        return {
+                            "tool_calls": [{
+                                "name": part.function_call.name,
+                                "arguments": dict(part.function_call.args) if hasattr(part.function_call, 'args') else {}
+                            }],
+                            "raw_response": response.text
+                        }
+            
+            logger.info("No tool was called, returning text response")
+            return {
+                "tool_calls": [],
+                "response": response.text
+            }
+            
+        except ImportError:
+            logger.warning("FunctionDeclaration not available, using text-based fallback")
+            raise  # Fall through to text-based approach
         
     except Exception as e:
-        logger.error(f"Error in LLM function calling: {e}")
-        raise
+        logger.warning(f"Function calling failed: {e}, using text-based fallback")
+        
+        # Fallback: text-based tool invocation
+        try:
+            tool_names = ", ".join([t.get("name") for t in tools])
+            tool_descriptions = "\n".join([f"- {t.get('name')}: {t.get('description')}" for t in tools])
+            
+            if system_instruction:
+                fallback_prompt = f"""{system_instruction}
+
+{prompt}
+
+Available tools:
+{tool_descriptions}
+
+If you need to use a tool, respond with a JSON object like:
+{{"tool_name": "tool_name_here", "arguments": {{"key": "value"}}}}
+
+Otherwise respond normally with your analysis/response."""
+            else:
+                fallback_prompt = f"""{prompt}
+
+Available tools:
+{tool_descriptions}
+
+If you need to use a tool, respond with JSON like {{"tool_name": "name", "arguments": {{}}}}.
+Otherwise respond normally."""
+            
+            response = model.generate_content(fallback_prompt)
+            response_text = response.text.strip()
+            
+            # Try to parse as tool call
+            try:
+                # Check if response looks like JSON
+                if response_text.startswith("{"):
+                    parsed = json.loads(response_text)
+                    if "tool_name" in parsed and "arguments" in parsed:
+                        return {
+                            "tool_calls": [{
+                                "name": parsed["tool_name"],
+                                "arguments": parsed.get("arguments", {})
+                            }],
+                            "fallback": True
+                        }
+            except (json.JSONDecodeError, ValueError):
+                pass
+            
+            # If not a tool call, return as text response
+            return {
+                "tool_calls": [],
+                "response": response_text,
+                "fallback": True
+            }
+            
+        except Exception as fallback_error:
+            logger.error(f"Text-based fallback also failed: {fallback_error}")
+            return {
+                "tool_calls": [],
+                "response": "",
+                "error": str(fallback_error)
+            }

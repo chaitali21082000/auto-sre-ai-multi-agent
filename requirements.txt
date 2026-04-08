@@ -3,12 +3,12 @@ flask
 uvicorn
 google-cloud-firestore
 google-cloud-pubsub
-google-cloud-aiplatform
+google-cloud-aiplatform>=1.39.0
 google-cloud-storage
 google-cloud-secret-manager
 requests
 pydantic
-vertexai
+vertexai>=0.25.0
 faiss-cpu
 numpy
 python-dotenv
