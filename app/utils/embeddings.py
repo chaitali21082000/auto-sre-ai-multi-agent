@@ -7,7 +7,12 @@ import os
 project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent-492710")
 vertexai.init(project=project_id, location="us-central1")
 
-embedding_model = TextEmbeddingModel.from_pretrained("textembedding-gecko@003")
+# Use latest available embedding model
+try:
+    embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+except Exception:
+    # Fallback to gecko if text-embedding-004 not available
+    embedding_model = TextEmbeddingModel.from_pretrained("textembedding-gecko@latest")
 
 def get_embeddings(texts: list[str]) -> np.ndarray:
     """Get embeddings for a list of texts"""
