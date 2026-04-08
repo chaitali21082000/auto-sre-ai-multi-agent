@@ -1,6 +1,7 @@
 """
 Knowledge Base Manager - Handles KB operations including feedback loop learning
 Manages adding solutions, validation, confidence updates, and FAISS index rebuilding
+Supports both local and GCS storage with fallback
 """
 
 import json
@@ -9,6 +10,8 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+from google.cloud import storage
+from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
 
@@ -20,24 +23,60 @@ class KnowledgeManager:
     
     @staticmethod
     def load_kb() -> dict:
-        """Load knowledge base from file"""
+        """Load KB from Cloud Storage with fallback to local file"""
         try:
-            with open(KnowledgeManager.KB_PATH, 'r') as f:
-                return json.load(f)
+            storage_client = storage.Client()
+            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob("knowledge_base.json")
+            
+            if blob.exists():
+                content = blob.download_as_string()
+                logger.info("Loaded KB from Cloud Storage")
+                return json.loads(content)
+            logger.warning("KB blob not found in Cloud Storage")
+            return {"scenarios": []}
         except Exception as e:
-            logger.error(f"Error loading KB: {e}")
+            logger.warning(f"Could not load KB from GCS: {e}")
+            # Fallback to local file if available
+            try:
+                if os.path.exists(KnowledgeManager.KB_PATH):
+                    with open(KnowledgeManager.KB_PATH) as f:
+                        logger.info("Loaded KB from local file")
+                        return json.load(f)
+            except Exception as local_err:
+                logger.warning(f"Could not load KB from local file: {local_err}")
             return {"scenarios": []}
     
     @staticmethod
     def save_kb(kb: dict) -> bool:
-        """Save knowledge base to file"""
+        """Save KB to Cloud Storage with fallback to local file"""
+        saved_to_gcs = False
         try:
-            with open(KnowledgeManager.KB_PATH, 'w') as f:
+            storage_client = storage.Client()
+            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob("knowledge_base.json")
+            
+            blob.upload_from_string(
+                json.dumps(kb, indent=2),
+                content_type="application/json"
+            )
+            logger.info("KB saved to Cloud Storage")
+            saved_to_gcs = True
+        except Exception as e:
+            logger.error(f"Error saving KB to GCS: {e}")
+        
+        # Always try local backup
+        try:
+            os.makedirs("app/rag", exist_ok=True)
+            with open(KnowledgeManager.KB_PATH, "w") as f:
                 json.dump(kb, f, indent=2)
+            logger.info("KB backed up to local file")
             return True
         except Exception as e:
-            logger.error(f"Error saving KB: {e}")
-            return False
+            logger.error(f"Error saving KB to local file: {e}")
+            return saved_to_gcs
     
     @staticmethod
     def add_solution(solution: dict) -> bool:

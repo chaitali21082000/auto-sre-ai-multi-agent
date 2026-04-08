@@ -4,6 +4,10 @@ import faiss
 import numpy as np
 from app.utils.embeddings import get_embeddings, embed_text, cosine_similarity
 import os
+import logging
+from google.cloud import storage
+
+logger = logging.getLogger(__name__)
 
 KNOWLEDGE_BASE_FILE = "app/rag/knowledge_base.json"
 FAISS_INDEX_FILE = "app/rag/faiss_index.bin"
@@ -25,20 +29,24 @@ class RAGEngine:
             return json.load(f)
     
     def _initialize_index(self):
-        """Initialize FAISS index from saved files or create new one"""
-        if os.path.exists(FAISS_INDEX_FILE) and os.path.exists(KB_EMBEDDINGS_FILE):
-            # Load existing index
+        """Initialize FAISS index from GCS or local files or create new one"""
+        if self._gcs_index_exists():
+            self._load_index_from_gcs()
+        elif os.path.exists(FAISS_INDEX_FILE) and os.path.exists(KB_EMBEDDINGS_FILE):
+            # Load from local files
             self.index = faiss.read_index(FAISS_INDEX_FILE)
             self.embeddings = np.load(KB_EMBEDDINGS_FILE)
+            logger.info("Loaded FAISS index from local files")
         else:
             # Create new index
             self._rebuild_index()
     
     def _rebuild_index(self):
-        """Rebuild FAISS index from knowledge base"""
+        """Rebuild FAISS index from knowledge base and save to GCS"""
         if not self.documents:
             self.index = faiss.IndexFlatL2(384)  # 384 for textembedding-gecko
             self.embeddings = np.array([])
+            self._save_index_to_gcs()
             return
         
         # Get embeddings for all documents
@@ -58,6 +66,9 @@ class RAGEngine:
         os.makedirs("app/rag", exist_ok=True)
         faiss.write_index(self.index, FAISS_INDEX_FILE)
         np.save(KB_EMBEDDINGS_FILE, embeddings)
+        
+        # Save to GCS
+        self._save_index_to_gcs()
     
     def search(self, query: str, top_k: int = 3) -> list[dict]:
         """Search similar documents using vector similarity"""
@@ -100,6 +111,59 @@ class RAGEngine:
         
         # Rebuild index
         self._rebuild_index()
+    
+    def _gcs_index_exists(self) -> bool:
+        """Check if FAISS index exists in GCS"""
+        try:
+            storage_client = storage.Client()
+            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+            bucket = storage_client.bucket(bucket_name)
+            return bucket.blob("faiss_index.bin").exists()
+        except Exception as e:
+            logger.warning(f"Error checking GCS index: {e}")
+            return False
+    
+    def _load_index_from_gcs(self):
+        """Load FAISS index and embeddings from GCS"""
+        try:
+            storage_client = storage.Client()
+            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+            bucket = storage_client.bucket(bucket_name)
+            
+            # Download index
+            os.makedirs("/tmp", exist_ok=True)
+            bucket.blob("faiss_index.bin").download_to_filename("/tmp/index.bin")
+            self.index = faiss.read_index("/tmp/index.bin")
+            
+            # Download embeddings
+            bucket.blob("kb_embeddings.npy").download_to_filename("/tmp/embeddings.npy")
+            self.embeddings = np.load("/tmp/embeddings.npy")
+            
+            logger.info("FAISS index loaded from GCS")
+        except Exception as e:
+            logger.error(f"Could not load FAISS from GCS: {e}")
+            self._rebuild_index()
+    
+    def _save_index_to_gcs(self):
+        """Save FAISS index and embeddings to GCS"""
+        try:
+            storage_client = storage.Client()
+            bucket_name = os.getenv("KB_BUCKET_NAME", "autosre-kb-default")
+            bucket = storage_client.bucket(bucket_name)
+            
+            os.makedirs("/tmp", exist_ok=True)
+            
+            # Save index
+            faiss.write_index(self.index, "/tmp/index.bin")
+            bucket.blob("faiss_index.bin").upload_from_filename("/tmp/index.bin")
+            
+            # Save embeddings
+            np.save("/tmp/embeddings.npy", self.embeddings)
+            bucket.blob("kb_embeddings.npy").upload_from_filename("/tmp/embeddings.npy")
+            
+            logger.info("FAISS index saved to GCS")
+        except Exception as e:
+            logger.error(f"Error saving FAISS to GCS: {e}")
 
 # Singleton instance
 _rag_engine = None

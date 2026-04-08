@@ -1,7 +1,32 @@
 """GitHub integration for AutoFix workflow"""
 import requests
 import json
+import os
+import logging
 from app.config.services import get_service_repo
+from google.cloud import secretmanager
+
+logger = logging.getLogger(__name__)
+
+def get_secret(secret_id: str) -> str:
+    """Get secret from Secret Manager with fallback to env var"""
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent")
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        secret_value = response.payload.data.decode("UTF-8")
+        logger.info(f"Retrieved secret '{secret_id}' from Secret Manager")
+        return secret_value
+    except Exception as e:
+        logger.warning(f"Could not fetch {secret_id} from Secret Manager: {e}")
+        env_var = secret_id.upper().replace("-", "_")
+        fallback = os.getenv(env_var)
+        if fallback:
+            logger.info(f"Using fallback environment variable {env_var}")
+            return fallback
+        logger.error(f"Secret {secret_id} not found in Secret Manager or environment")
+        return None
 
 class GitHubClient:
     """Handle GitHub API interactions"""
@@ -12,10 +37,11 @@ class GitHubClient:
         
         Args:
             github_token: GitHub Personal Access Token
-                         If None, reads from GITHUB_TOKEN env var
+                         If None, retrieves from Secret Manager, then env var
         """
-        import os
-        self.token = github_token or os.getenv("GITHUB_TOKEN")
+        self.token = github_token or get_secret("github-token") or os.getenv("GITHUB_TOKEN")
+        if not self.token:
+            logger.error("GitHub token not provided and not found in Secret Manager or environment")
         self.api_url = "https://api.github.com"
         self.headers = {
             "Authorization": f"token {self.token}",

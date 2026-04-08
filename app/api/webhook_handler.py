@@ -9,32 +9,61 @@ import re
 import logging
 import hmac
 import hashlib
+import os
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from typing import Dict, Optional
+from google.cloud import secretmanager
 
 from app.rag.knowledge_manager import KnowledgeManager, rebuild_faiss_index
 
 logger = logging.getLogger(__name__)
 
+def get_secret_from_manager(secret_id: str) -> Optional[str]:
+    """Get secret from Secret Manager"""
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "auto-sre-ai-multi-agent")
+        name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        logger.warning(f"Could not fetch {secret_id} from Secret Manager: {e}")
+        return None
+
 webhook_bp = Blueprint('webhooks', __name__, url_prefix='/api/webhooks')
 
 
-def verify_github_signature(payload_body: bytes, signature_header: str, secret: str) -> bool:
+def verify_github_signature(payload_body: bytes, signature_header: str, secret: str = None) -> bool:
     """
     Verify GitHub webhook signature
     
     Args:
         payload_body: Raw request body
         signature_header: X-Hub-Signature-256 header value
-        secret: Webhook secret
+        secret: Webhook secret (optional, will fetch from Secret Manager if not provided)
     
     Returns:
         bool: True if signature is valid
     """
-    if not signature_header or not secret:
-        logger.warning("Signature verification skipped - no secret provided")
-        return True
+    if not signature_header:
+        logger.warning("No signature provided")
+        return False
+    
+    # Get secret from Secret Manager if not provided
+    if not secret:
+        try:
+            secret = get_secret_from_manager("github-webhook-secret")
+        except:
+            pass
+    
+    # Fallback to environment variable
+    if not secret:
+        secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+    
+    if not secret:
+        logger.warning("No webhook secret configured")
+        return False
     
     try:
         hash_object = hmac.new(

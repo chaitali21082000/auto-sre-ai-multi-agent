@@ -3,6 +3,8 @@ uvicorn
 google-cloud-firestore
 google-cloud-pubsub
 google-cloud-aiplatform
+google-cloud-storage
+google-cloud-secret-manager
 requests
 pydantic
 vertexai
