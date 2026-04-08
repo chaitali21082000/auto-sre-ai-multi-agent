@@ -34,6 +34,7 @@ class KnowledgeManager:
     
     KB_PATH = 'app/rag/knowledge_base.json'
 
+
     @staticmethod
     def _normalize_kb(raw_kb) -> dict:
         """Normalize KB payload to the expected schema."""
