@@ -467,9 +467,11 @@ echo "Service URL: $CLOUD_RUN_URL"
 ### **Step 3.3: Deploy Cloud Function (Auto-Fix)**
 
 ```bash
-# Deploy Cloud Function for auto-fix
+# Deploy Cloud Function for auto-fix (2nd gen by default in Cloud SDK 492+)
 gcloud functions deploy auto-fix \
   --runtime python311 \
+  --gen2 \
+  --region ${REGION} \
   --trigger-http \
   --allow-unauthenticated \
   --entry-point auto_fix \
@@ -481,11 +483,18 @@ gcloud functions deploy auto-fix \
 # Get Cloud Function URL
 export CF_URL=$(gcloud functions describe auto-fix \
   --region ${REGION} \
-  --format 'value(httpsTrigger.url)')
+  --gen2 \
+  --format 'value(serviceConfig.uri)')
 
 echo "✅ Cloud Function deployed"
 echo "Function URL: $CF_URL"
 ```
+
+**Note on Cloud SDK 492.0.0 or later:**
+- By default, new functions deploy as 2nd gen
+- Explicitly use `--gen2` flag for clarity
+- Use `--no-gen2` if you need 1st gen compatibility
+- Learn more: https://cloud.google.com/functions/docs/concepts/version-comparison
 
 ---
 
