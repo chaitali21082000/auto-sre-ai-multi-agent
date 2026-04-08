@@ -34,10 +34,7 @@ class KnowledgeManager:
     
     KB_PATH = 'app/rag/knowledge_base.json'
 
-<<<<<<< codex/fix-runtimeerror-in-json-response-dwvn61
 
-=======
->>>>>>> main
     @staticmethod
     def _normalize_kb(raw_kb) -> dict:
         """Normalize KB payload to the expected schema."""
