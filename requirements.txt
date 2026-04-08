@@ -1,4 +1,5 @@
 fastapi
+flask
 uvicorn
 google-cloud-firestore
 google-cloud-pubsub
@@ -13,3 +14,4 @@ numpy
 python-dotenv
 PyGithub>=1.58
 schedule>=1.1.9
+pytest

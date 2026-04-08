@@ -13,6 +13,8 @@ import os
 from datetime import datetime
 from typing import Dict, Optional
 
+from flask import request, jsonify, Blueprint
+
 try:
     from google.cloud import secretmanager
     HAS_SECRET_MANAGER = True
@@ -20,6 +22,9 @@ except ImportError:
     HAS_SECRET_MANAGER = False
 
 from app.rag.knowledge_manager import KnowledgeManager, rebuild_faiss_index
+
+# Create Blueprint for webhook routes
+webhook_bp = Blueprint('webhook', __name__)
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +368,3 @@ def handle_issue_event(payload: dict) -> tuple:
     
     # Future: Could extract solution from closed issue if needed
     return jsonify({'status': 'issue-closed'}), 200
-
-
-# Import at the end to avoid circular imports
-import os
