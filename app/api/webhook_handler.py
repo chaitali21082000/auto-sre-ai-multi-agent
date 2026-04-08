@@ -10,7 +10,6 @@ import logging
 import hmac
 import hashlib
 import os
-from flask import Blueprint, request, jsonify
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -39,8 +38,6 @@ def get_secret_from_manager(secret_id: str) -> Optional[str]:
     except Exception as e:
         logger.warning(f"Could not fetch {secret_id} from Secret Manager: {e}")
         return None
-
-webhook_bp = Blueprint('webhooks', __name__, url_prefix='/api/webhooks')
 
 
 def verify_github_signature(payload_body: bytes, signature_header: str, secret: str = None) -> bool:
