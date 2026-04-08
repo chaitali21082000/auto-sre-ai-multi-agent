@@ -7,7 +7,6 @@ Supports both local and GCS storage with fallback
 import json
 import os
 import logging
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -34,6 +33,25 @@ class KnowledgeManager:
     """Manages knowledge base with feedback loop support"""
     
     KB_PATH = 'app/rag/knowledge_base.json'
+
+
+    @staticmethod
+    def _normalize_kb(raw_kb) -> dict:
+        """Normalize KB payload to the expected schema."""
+        if isinstance(raw_kb, dict):
+            scenarios = raw_kb.get('scenarios')
+            if isinstance(scenarios, list):
+                return raw_kb
+            raw_kb['scenarios'] = []
+            logger.warning("KB missing 'scenarios' list; initializing empty list")
+            return raw_kb
+
+        if isinstance(raw_kb, list):
+            logger.warning("KB root is a list; converting to {'scenarios': [...]} schema")
+            return {'scenarios': raw_kb}
+
+        logger.warning("KB has unsupported schema; resetting to empty scenarios list")
+        return {'scenarios': []}
     
     @staticmethod
     def load_kb() -> dict:
@@ -49,7 +67,7 @@ class KnowledgeManager:
                 if blob.exists():
                     content = blob.download_as_string()
                     logger.info("Loaded KB from Cloud Storage")
-                    return json.loads(content)
+                    return KnowledgeManager._normalize_kb(json.loads(content))
                 logger.debug("KB blob not found in Cloud Storage")
             except Exception as e:
                 logger.debug(f"Could not load KB from GCS: {e}")
@@ -59,15 +77,16 @@ class KnowledgeManager:
             if os.path.exists(KnowledgeManager.KB_PATH):
                 with open(KnowledgeManager.KB_PATH) as f:
                     logger.info("Loaded KB from local file")
-                    return json.load(f)
+                    return KnowledgeManager._normalize_kb(json.load(f))
         except Exception as local_err:
             logger.warning(f"Could not load KB from local file: {local_err}")
         
-        return {"scenarios": []}
+        return KnowledgeManager._normalize_kb({"scenarios": []})
     
     @staticmethod
     def save_kb(kb: dict) -> bool:
         """Save KB to Cloud Storage with fallback to local file"""
+        kb = KnowledgeManager._normalize_kb(kb)
         saved_to_gcs = False
         
         # Try GCS first if available
@@ -117,7 +136,7 @@ class KnowledgeManager:
                 return False
             
             # Load existing KB
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             
             # Check if solution already exists
             existing = next(
@@ -225,7 +244,7 @@ class KnowledgeManager:
             Solution dict or None if not found
         """
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             return next(
                 (s for s in kb['scenarios'] 
                  if s['error_type'] == error_type),
@@ -239,7 +258,7 @@ class KnowledgeManager:
     def list_all_solutions() -> List[dict]:
         """List all solutions in KB"""
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             return kb.get('scenarios', [])
         except Exception as e:
             logger.error(f"Error listing solutions: {e}")
@@ -249,7 +268,7 @@ class KnowledgeManager:
     def list_learned_solutions() -> List[dict]:
         """List only auto-learned solutions"""
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             learned = [s for s in kb['scenarios'] if s.get('is_auto_learned', False)]
             return learned
         except Exception as e:
@@ -260,7 +279,7 @@ class KnowledgeManager:
     def list_manual_solutions() -> List[dict]:
         """List only manually added solutions"""
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             manual = [s for s in kb['scenarios'] if not s.get('is_auto_learned', False)]
             return manual
         except Exception as e:
@@ -281,7 +300,7 @@ class KnowledgeManager:
             bool: Success
         """
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             solution = next(
                 (s for s in kb['scenarios'] if s['error_type'] == error_type),
                 None
@@ -340,7 +359,7 @@ class KnowledgeManager:
     def get_kb_statistics() -> dict:
         """Get knowledge base statistics"""
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             solutions = kb.get('scenarios', [])
             auto_learned = [s for s in solutions if s.get('is_auto_learned', False)]
             manual = [s for s in solutions if not s.get('is_auto_learned', False)]
@@ -375,7 +394,7 @@ class KnowledgeManager:
             bool: Success
         """
         try:
-            kb = KnowledgeManager.load_kb()
+            kb = KnowledgeManager._normalize_kb(KnowledgeManager.load_kb())
             original_count = len(kb['scenarios'])
             
             kb['scenarios'] = [
